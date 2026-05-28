@@ -1,0 +1,11 @@
+[project]
+name = "ant-tutorial"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.14"
+dependencies = [
+    "ant-ai[langfuse,openai,viz]",
+    "marimo>=0.23.8",
+    "pip>=26.1.1",
+]
