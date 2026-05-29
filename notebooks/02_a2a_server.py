@@ -1,5 +1,6 @@
 import marimo
 
+__generated_with = "0.23.6"
 app = marimo.App()
 
 
@@ -9,17 +10,15 @@ def _():
     import json
     import marimo as mo
     import os
-    import subprocess
     import threading
     import time
     import uuid
-    from typing import Literal
     from collections.abc import AsyncGenerator
     from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill
-    from ant_ai import Agent, BaseAgent, InvocationContext, State, tool
+    from ant_ai import Agent, BaseAgent, InvocationContext, State
     from ant_ai.a2a import A2AClient, A2AConfig, A2AServer
     from ant_ai.llm.integrations import LiteLLMChat
-    from ant_ai.workflow import END, START, NodeYield, Workflow, build_workflow_graph
+    from ant_ai.workflow import END, START, NodeYield, Workflow
     from utils import show_raw_response, show_response, stream_output
 
     return (
@@ -35,13 +34,11 @@ def _():
         BaseAgent,
         END,
         InvocationContext,
-        Literal,
         LiteLLMChat,
         NodeYield,
         START,
         State,
         Workflow,
-        build_workflow_graph,
         getpass,
         json,
         mo,
@@ -49,10 +46,8 @@ def _():
         show_raw_response,
         show_response,
         stream_output,
-        subprocess,
         threading,
         time,
-        tool,
         uuid,
     )
 
@@ -62,13 +57,13 @@ def _(mo):
     mo.md(r"""
     # 02 — A2A Server
 
-    Wrap the Calculator agent from notebook 01 in an **A2A (Agent-to-Agent) server** so any HTTP client — or another agent — can talk to it over JSON-RPC.
+    Wrap a simple agent in an **A2A (Agent-to-Agent) server** so any HTTP client — or another agent — can talk to it over JSON-RPC.
 
     What this notebook covers:
-    1. Creating an `AgentCard` (the agent's public identity)
-    2. Wrapping the agent in a minimal `Workflow`
+    1. Creating a simple agent with a workflow
+    2. Creating an `AgentCard` (the agent's public identity)
     3. Starting an `A2AServer` in the background
-    4. Sending requests via `curl` (terminal commands and Python subprocess)
+    4. Sending requests via `curl` and the Python client
     """)
     return
 
@@ -76,14 +71,8 @@ def _(mo):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## 1 · Install & API Key
+    ## 1 · API Key
     """)
-    return
-
-
-@app.cell
-def _():
-    # '%pip install ant-ai --quiet' command supported automatically in marimo
     return
 
 
@@ -97,58 +86,36 @@ def _(getpass, os):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## 2 · Agent + Tools
+    ## 2 · Agent & Workflow
 
-    Same Calculator agent as notebook 01.
+    A simple conversational agent with no tools, wired into a single-node workflow.
     """)
     return
 
 
 @app.cell
-def _(Agent, LiteLLMChat, tool):
-    @tool
-    def add(a: float, b: float) -> float:
-        """Add two numbers."""
-        return a + b
-
-    @tool
-    def multiply(a: float, b: float) -> float:
-        """Multiply two numbers."""
-        return a * b
-
-    @tool
-    def celsius_to_fahrenheit(celsius: float) -> float:
-        """Convert a temperature from Celsius to Fahrenheit."""
-        return celsius * 9 / 5 + 32
-
+def _(Agent, LiteLLMChat):
     agent: Agent = Agent(
-        name="Calculator",
-        system_prompt=(
-            "You are a helpful calculator assistant. "
-            "Use the provided tools to answer maths and unit-conversion questions."
-        ),
+        name="Assistant",
+        system_prompt="You are a helpful assistant. Answer the user's questions clearly and concisely.",
         llm=LiteLLMChat("gpt-4o-mini"),
-        tools=[add, multiply, celsius_to_fahrenheit],
     )
 
     print(f"Agent '{agent.name}' ready.")
     return (agent,)
 
 
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
-    ## 3 · Workflow
-
-    A `Workflow` defines the graph of steps the agent executes per request. Here we use the simplest possible workflow: a single node that streams the agent's response and then returns the updated state.
-
-    The node function signature `(agent, state, ctx)` is the convention ant-ai uses to inject dependencies.
-    """)
-    return
-
-
 @app.cell
-def _(AsyncGenerator, BaseAgent, END, InvocationContext, NodeYield, START, State, Workflow):
+def _(
+    AsyncGenerator,
+    BaseAgent,
+    END,
+    InvocationContext,
+    NodeYield,
+    START,
+    State,
+    Workflow,
+):
     async def answer(
         agent: BaseAgent, state: State, ctx: InvocationContext | None
     ) -> AsyncGenerator[NodeYield, None]:
@@ -160,77 +127,17 @@ def _(AsyncGenerator, BaseAgent, END, InvocationContext, NodeYield, START, State
     workflow.add_node("answer", answer)
     workflow.add_edge(START, "answer")
     workflow.add_edge("answer", END)
+
     print("Workflow ready.")
     return (workflow,)
 
 
-@app.cell
-def _(build_workflow_graph, mo, workflow):
-    _graph = build_workflow_graph(workflow)
-    mo.Html(_graph.pipe(format="svg").decode())
-    return
-
-
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## 3b · Conditional Edges
+    ## 3 · AgentCard
 
-    A **conditional edge** routes the workflow to a different next node based on runtime state. You provide a router function that returns a `Literal` string matching one of the target node names — ant-ai reads the return annotation to discover the possible branches.
-
-    In this example the router inspects the incoming question: conversion questions (temperature, units) go to `"convert"`, everything else goes to `"calculate"`. Both nodes stream the same agent; the branching makes the intent explicit in the graph.
-    """)
-    return
-
-
-@app.cell
-def _(AsyncGenerator, BaseAgent, END, InvocationContext, Literal, NodeYield, START, State, Workflow):
-    async def calculate(
-        agent: BaseAgent, state: State, ctx: InvocationContext | None
-    ) -> AsyncGenerator[NodeYield, None]:
-        async for event in agent.stream(state, ctx=ctx):
-            yield event
-        yield state
-
-    async def convert(
-        agent: BaseAgent, state: State, ctx: InvocationContext | None
-    ) -> AsyncGenerator[NodeYield, None]:
-        async for event in agent.stream(state, ctx=ctx):
-            yield event
-        yield state
-
-    def route_question(agent, state, ctx) -> Literal["calculate", "convert"]:
-        msg = state.last_message.content.lower()
-        if any(kw in msg for kw in ["celsius", "fahrenheit", "°c", "°f", "convert", "temperature"]):
-            return "convert"
-        return "calculate"
-
-    cond_workflow = Workflow()
-    cond_workflow.add_node("calculate", calculate)
-    cond_workflow.add_node("convert", convert)
-    cond_workflow.add_conditional_edge(START, route_question)  # → "calculate" or "convert"
-    cond_workflow.add_edge("calculate", END)
-    cond_workflow.add_edge("convert", END)
-    print("Conditional workflow ready.")
-    return (cond_workflow,)
-
-
-@app.cell
-def _(build_workflow_graph, cond_workflow, mo):
-    _graph = build_workflow_graph(cond_workflow)
-    mo.Html(_graph.pipe(format="svg").decode())
-    return
-
-
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
-    ## 4 · AgentCard
-
-    The `AgentCard` is the agent's public identity document — think of it as an OpenAPI spec for a single agent. It is served at `/.well-known/agent.json` and tells clients:
-    - What the agent can do (`skills`)
-    - How to reach it (`supported_interfaces`)
-    - What protocols it speaks (`capabilities`)
+    The `AgentCard` is the agent's public identity document, served at `/.well-known/agent-card.json`. It tells clients what the agent can do and how to reach it.
     """)
     return
 
@@ -242,8 +149,8 @@ def _(AgentCapabilities, AgentCard, AgentInterface, AgentSkill):
     BASE_URL = f"http://{HOST}:{PORT}/"
 
     card = AgentCard(
-        name="Calculator",
-        description="A helpful calculator that can do arithmetic and unit conversions.",
+        name="Assistant",
+        description="A helpful conversational assistant.",
         version="1.0.0",
         default_input_modes=["text"],
         default_output_modes=["text"],
@@ -251,10 +158,10 @@ def _(AgentCapabilities, AgentCard, AgentInterface, AgentSkill):
         supported_interfaces=[AgentInterface(protocol_binding="JSONRPC", url=BASE_URL)],
         skills=[
             AgentSkill(
-                id="arithmetic",
-                name="Arithmetic",
-                description="Add, multiply, and convert units.",
-                tags=["math", "calculator", "conversion"],
+                id="chat",
+                name="Chat",
+                description="Answer questions and have conversations.",
+                tags=["chat", "assistant"],
             )
         ],
     )
@@ -266,17 +173,25 @@ def _(AgentCapabilities, AgentCard, AgentInterface, AgentSkill):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## 5 · Start the A2A Server
+    ## 4 · Start the A2A Server
 
-    `A2AServer.serve()` calls `uvicorn.run()` internally, which is blocking. We run it in a **daemon thread** so the rest of the notebook stays interactive.
-
-    > **Kernel restart tip:** If you restart the kernel, the daemon thread is automatically killed. Re-run cells 2–6 to bring the server back up.
+    `A2AServer.serve()` calls `uvicorn.run()` internally. We run it in a **daemon thread** so the notebook stays interactive.
     """)
     return
 
 
 @app.cell
-def _(A2AServer, BASE_URL, HOST, PORT, agent, card, threading, time, workflow):
+def _(
+    A2AServer,
+    BASE_URL,
+    HOST,
+    PORT,
+    agent: "Agent",
+    card,
+    threading,
+    time,
+    workflow,
+):
     server = A2AServer(
         agent=agent,
         workflow=workflow,
@@ -292,7 +207,7 @@ def _(A2AServer, BASE_URL, HOST, PORT, agent, card, threading, time, workflow):
     )
     server_thread.start()
 
-    time.sleep(2)  # give uvicorn a moment to bind the port
+    time.sleep(2)
     print(f"Server running at {BASE_URL}")
     return
 
@@ -300,52 +215,56 @@ def _(A2AServer, BASE_URL, HOST, PORT, agent, card, threading, time, workflow):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## 6 · Send Requests
-
-    The server exposes two endpoints:
+    ## 5 · Send Requests
 
     | Endpoint | Purpose |
     |---|---|
     | `GET /.well-known/agent-card.json` | Fetch the AgentCard |
     | `POST /` | Send a JSON-RPC message to the agent |
 
-    We use Python's `subprocess` to run `curl` so you can see the exact commands. Copy them into any terminal.
-    """)
-    return
-
-
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
-    ### 6a · Fetch the AgentCard
+    ### 5a · Fetch the AgentCard
     """)
     return
 
 
 @app.cell
-def _(HOST, PORT, json, mo, subprocess):
+def _(HOST, PORT, json, mo):
+    import subprocess as _subprocess
+
     AGENT_CARD_URL = f"http://{HOST}:{PORT}/.well-known/agent-card.json"
 
-    result = subprocess.run(["curl", "-s", AGENT_CARD_URL], capture_output=True, text=True)
-    if not result.stdout:
-        mo.output.replace(mo.callout(mo.md(f"Empty response: `{result.stderr}`"), kind="danger"))
+    _result = _subprocess.run(
+        ["curl", "-s", AGENT_CARD_URL], capture_output=True, text=True
+    )
+    if not _result.stdout:
+        mo.output.replace(
+            mo.callout(mo.md(f"Empty response: `{_result.stderr}`"), kind="danger")
+        )
     else:
-        _data = json.loads(result.stdout)
-        mo.output.replace(mo.vstack([
-            mo.md(f"**{_data.get('name')}** v{_data.get('version')} — `{AGENT_CARD_URL}`"),
-            mo.accordion({"JSON": mo.md(f"```json\n{json.dumps(_data, indent=2)}\n```")}),
-        ]))
+        _data = json.loads(_result.stdout)
+        mo.output.replace(
+            mo.vstack(
+                [
+                    mo.md(
+                        f"**{_data.get('name')}** v{_data.get('version')} — `{AGENT_CARD_URL}`"
+                    ),
+                    mo.accordion(
+                        {"JSON": mo.md(f"```json\n{json.dumps(_data, indent=2)}\n```")}
+                    ),
+                ]
+            )
+        )
     return
 
 
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ### 6b · Send a Message (blocking)
+    ### 5b · Send a Message
 
-    The A2A v1.0 protocol uses **JSON-RPC 2.0** with the `SendMessage` method for a blocking call that waits for the final answer before returning. Use `SendStreamingMessage` (with `Accept: text/event-stream`) for a streaming call.
+    The A2A protocol uses **JSON-RPC 2.0** with the `SendMessage` method.
 
-    ```
+    ```bash
     curl -X POST http://127.0.0.1:9000/ \
       -H 'Content-Type: application/json' \
       -H 'A2A-Version: 1.0' \
@@ -357,7 +276,7 @@ def _(mo):
           "message": {
             "role": "ROLE_USER",
             "messageId": "msg-001",
-            "parts": [{"text": "What is 3 + 4?"}]
+            "parts": [{"text": "Hello! What can you help me with?"}]
           }
         }
       }'
@@ -367,7 +286,9 @@ def _(mo):
 
 
 @app.cell
-def _(HOST, PORT, json, subprocess, uuid):
+def _(HOST, PORT, json, uuid):
+    import subprocess as _sp
+
     RPC_URL = f"http://{HOST}:{PORT}/"
 
     def send_message(text: str) -> dict:
@@ -383,7 +304,7 @@ def _(HOST, PORT, json, subprocess, uuid):
                 },
             },
         }
-        result = subprocess.run(
+        result = _sp.run(
             [
                 "curl",
                 "-s",
@@ -407,67 +328,29 @@ def _(HOST, PORT, json, subprocess, uuid):
 
 @app.cell
 def _(send_message, show_raw_response):
-    show_raw_response(send_message("What is 3 + 4?"))
+    show_raw_response(send_message("Hello! What can you help me with?"))
     return
 
 
 @app.cell
 def _(send_message, show_response):
-    show_response(send_message("What is 12 multiplied by 8, and what is 37 °C in Fahrenheit?"))
+    show_response(send_message("Tell me a fun fact about space."))
     return
 
 
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ### Reading the response
+    ## 6 · Python Client
 
-    The JSON-RPC response wraps a **Task** object. The agent's reply is the last entry in `history`:
-
-    ```
-    response["result"]["task"]["history"][-1]["parts"][0]["text"]
-    ```
-    """)
-    return
-
-
-@app.cell
-def _(send_message, show_response):
-    show_response(send_message("What is 15 + 27?"))
-    return
-
-
-@app.cell(hide_code=True)
-def _(mo):
-    mo.md(r"""
-    ## 7 · Using the Python Client
-
-    Instead of raw `curl` / `subprocess`, ant-ai ships an `A2AClient` that handles JSON-RPC framing and returns typed `Event` objects. Each event has a `kind` (e.g. `final_answer`, `tool_calling`) and a `content` field with the text.
-
-    ```python
-    from ant_ai.a2a import A2AClient, A2AConfig
-
-    client = A2AClient(config=A2AConfig(endpoint=BASE_URL))
-
-    async for event in client.send_message("What is 3 + 4?"):
-        if event.content:
-            print(event.kind, event.content)
-    ```
+    `A2AClient` handles JSON-RPC framing and returns typed `Event` objects.
     """)
     return
 
 
 @app.cell
 async def _(A2AClient, A2AConfig, BASE_URL, stream_output):
-    _prompt = "What is 3 + 4?"
-    _client = A2AClient(config=A2AConfig(endpoint=BASE_URL))
-    await stream_output(_client.send_message(_prompt), _prompt)
-    return
-
-
-@app.cell
-async def _(A2AClient, A2AConfig, BASE_URL, stream_output):
-    _prompt = "What is 12 multiplied by 8, and what is 37 °C in Fahrenheit?"
+    _prompt = "What is the capital of France?"
     _client = A2AClient(config=A2AConfig(endpoint=BASE_URL))
     await stream_output(_client.send_message(_prompt), _prompt)
     return
