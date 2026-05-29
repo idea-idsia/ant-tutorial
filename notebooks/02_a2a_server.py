@@ -13,6 +13,7 @@ def _():
     import threading
     import time
     import uuid
+    from typing import Literal
     from collections.abc import AsyncGenerator
     from a2a.types import AgentCapabilities, AgentCard, AgentInterface, AgentSkill
     from ant_ai import Agent, BaseAgent, InvocationContext, State, tool
@@ -34,6 +35,7 @@ def _():
         BaseAgent,
         END,
         InvocationContext,
+        Literal,
         LiteLLMChat,
         NodeYield,
         START,
@@ -165,6 +167,57 @@ def _(AsyncGenerator, BaseAgent, END, InvocationContext, NodeYield, START, State
 @app.cell
 def _(build_workflow_graph, mo, workflow):
     _graph = build_workflow_graph(workflow)
+    mo.Html(_graph.pipe(format="svg").decode())
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 3b · Conditional Edges
+
+    A **conditional edge** routes the workflow to a different next node based on runtime state. You provide a router function that returns a `Literal` string matching one of the target node names — ant-ai reads the return annotation to discover the possible branches.
+
+    In this example the router inspects the incoming question: conversion questions (temperature, units) go to `"convert"`, everything else goes to `"calculate"`. Both nodes stream the same agent; the branching makes the intent explicit in the graph.
+    """)
+    return
+
+
+@app.cell
+def _(AsyncGenerator, BaseAgent, END, InvocationContext, Literal, NodeYield, START, State, Workflow):
+    async def calculate(
+        agent: BaseAgent, state: State, ctx: InvocationContext | None
+    ) -> AsyncGenerator[NodeYield, None]:
+        async for event in agent.stream(state, ctx=ctx):
+            yield event
+        yield state
+
+    async def convert(
+        agent: BaseAgent, state: State, ctx: InvocationContext | None
+    ) -> AsyncGenerator[NodeYield, None]:
+        async for event in agent.stream(state, ctx=ctx):
+            yield event
+        yield state
+
+    def route_question(agent, state, ctx) -> Literal["calculate", "convert"]:
+        msg = state.last_message.content.lower()
+        if any(kw in msg for kw in ["celsius", "fahrenheit", "°c", "°f", "convert", "temperature"]):
+            return "convert"
+        return "calculate"
+
+    cond_workflow = Workflow()
+    cond_workflow.add_node("calculate", calculate)
+    cond_workflow.add_node("convert", convert)
+    cond_workflow.add_conditional_edge(START, route_question)  # → "calculate" or "convert"
+    cond_workflow.add_edge("calculate", END)
+    cond_workflow.add_edge("convert", END)
+    print("Conditional workflow ready.")
+    return (cond_workflow,)
+
+
+@app.cell
+def _(build_workflow_graph, cond_workflow, mo):
+    _graph = build_workflow_graph(cond_workflow)
     mo.Html(_graph.pipe(format="svg").decode())
     return
 
