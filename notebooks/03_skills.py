@@ -166,9 +166,9 @@ def _(Agent, LiteLLMChat, SKILL_DIR, subprocess, tool):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## 5 · Quick Smoke-Test (no server)
+    ## 5 · Quick Test (no server)
 
-    Before starting the A2A server, verify the skill is picked up by running the agent directly.
+    Verify the skill is picked up by running the agent directly.
     """)
     return
 

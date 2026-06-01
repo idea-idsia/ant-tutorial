@@ -23,8 +23,8 @@ def _():
         BaseAgent,
         END,
         InvocationContext,
-        Literal,
         LiteLLMChat,
+        Literal,
         Message,
         NodeYield,
         PrivateAttr,
@@ -87,7 +87,34 @@ def _(getpass, os):
 @app.cell(hide_code=True)
 def _(mo):
     mo.md(r"""
-    ## 3 · Define Tools
+    ## 3 · Simplest Agent
+
+    Before adding tools, here's the minimum to create an agent and get a response.
+    """)
+    return
+
+
+@app.cell
+async def _(Agent, InvocationContext, LiteLLMChat, Message, State):
+    simple_agent = Agent(
+        name="SimpleAgent",
+        system_prompt="You are a helpful assistant.",
+        llm=LiteLLMChat("gpt-4o-mini"),
+    )
+
+    ctx = InvocationContext(session_id="demo")
+    state = State()
+    state.add_message(Message(role="user", content="What is 2 + 2?"))
+
+    async for event in simple_agent.stream(state, ctx=ctx):
+            print(event.content)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 4 · Define Tools
 
     Tools are plain Python functions decorated with `@tool`. The **docstring** is what the LLM reads to decide when and how to call each tool.
     """)
@@ -289,7 +316,16 @@ def _(mo):
 
 
 @app.cell
-def _(AsyncGenerator, BaseAgent, END, InvocationContext, NodeYield, START, State, Workflow):
+def _(
+    AsyncGenerator,
+    BaseAgent,
+    END,
+    InvocationContext,
+    NodeYield,
+    START,
+    State,
+    Workflow,
+):
     async def answer(
         agent: BaseAgent, state: State, ctx: InvocationContext | None
     ) -> AsyncGenerator[NodeYield, None]:
@@ -325,7 +361,17 @@ def _(mo):
 
 
 @app.cell
-def _(AsyncGenerator, BaseAgent, END, InvocationContext, Literal, NodeYield, START, State, Workflow):
+def _(
+    AsyncGenerator,
+    BaseAgent,
+    END,
+    InvocationContext,
+    Literal,
+    NodeYield,
+    START,
+    State,
+    Workflow,
+):
     async def calculate(
         agent: BaseAgent, state: State, ctx: InvocationContext | None
     ) -> AsyncGenerator[NodeYield, None]:
@@ -360,6 +406,66 @@ def _(AsyncGenerator, BaseAgent, END, InvocationContext, Literal, NodeYield, STA
 def _(build_workflow_graph, cond_workflow, mo):
     _graph = build_workflow_graph(cond_workflow)
     mo.Html(_graph.pipe(format="svg").decode())
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ## 6c · Run the Conditional Workflow
+
+    Two inputs — one routes to `calculate`, the other to `convert` — so you can see the branching in action.
+    """)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ### Routes to `calculate`
+    """)
+    return
+
+
+@app.cell
+async def _(
+    InvocationContext,
+    Message,
+    State,
+    agent,
+    cond_workflow,
+    stream_output,
+):
+    _prompt = "What is 6 multiplied by 9?"
+    _ctx = InvocationContext(session_id="cond-calc")
+    _state = State()
+    _state.add_message(Message(role="user", content=_prompt))
+    await stream_output(cond_workflow.stream(agent, ctx=_ctx, state=_state), _prompt)
+    return
+
+
+@app.cell(hide_code=True)
+def _(mo):
+    mo.md(r"""
+    ### Routes to `convert`
+    """)
+    return
+
+
+@app.cell
+async def _(
+    InvocationContext,
+    Message,
+    State,
+    agent,
+    cond_workflow,
+    stream_output,
+):
+    _prompt = "What is 37 °C in Fahrenheit?"
+    _ctx = InvocationContext(session_id="cond-conv")
+    _state = State()
+    _state.add_message(Message(role="user", content=_prompt))
+    await stream_output(cond_workflow.stream(agent, ctx=_ctx, state=_state), _prompt)
     return
 
 
