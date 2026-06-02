@@ -12,7 +12,7 @@ Interactive notebooks for learning the `ant-ai` agent framework, covering basic 
 1. **Clone the repo and enter the directory**
 
    ```bash
-   git clone <repo-url>
+   git clone https://github.com/idea-idsia/ant-tutorial
    cd ant-tutorial
    ```
 
