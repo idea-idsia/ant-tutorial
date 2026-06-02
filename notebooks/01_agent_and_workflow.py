@@ -198,7 +198,7 @@ def _(mo):
     ## 4 · Create the Agent
 
     `Agent` is the main class. Give it:
-    - `name` – used in logs and the A2A card (later notebooks)
+    - `name` – used in logs
     - `system_prompt` – the agent's persona and instructions
     - `llm` – the language model backend
     - `tools` – the callables it may invoke
@@ -219,8 +219,14 @@ def _(Agent, LiteLLMChat, add, celsius_to_fahrenheit, multiply, tape):
         tools=[add, multiply, celsius_to_fahrenheit, tape],
     )
 
-    print(f"Agent '{agent.name}' created with {len(agent.tools)} tool(s).")
+    print(f"Agent '{agent.name}' created with {len(agent.registry.tools)} tools.")
     return (agent,)
+
+
+@app.cell
+def _(agent):
+    agent.registry.tools[0]
+    return
 
 
 @app.cell(hide_code=True)
